@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Calcolatrice</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Calcolatrice">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;background:#000;overflow:hidden;}
+  body{
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    font-family:-apple-system,'SF Pro Display','Helvetica Neue',Arial,sans-serif;
+    user-select:none;
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    padding-top:env(safe-area-inset-top,0px);
+  }
+
+  .calc{
+    width:100%;max-width:430px;
+    display:flex;flex-direction:column;
+    height:100%;position:relative;
+  }
+
+  /* ── DISPLAY ── */
+  .display{
+    flex:1;display:flex;flex-direction:column;
+    justify-content:flex-end;
+    padding:0 22px 12px;
+    overflow:hidden;
+  }
+
+  /* iOS 18: expression line on top */
+  .expr-line{
+    font-size:30px;font-weight:300;color:#fff;
+    text-align:right;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;
+    letter-spacing:-0.5px;line-height:1.3;
+    min-height:0;opacity:0;
+    transition:opacity .15s;
+  }
+  .expr-line.show{opacity:1;}
+
+  /* Main result */
+  .result-line{
+    font-size:90px;font-weight:200;color:#fff;
+    text-align:right;letter-spacing:-5px;line-height:1;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    transition:font-size .1s,color .1s;
+    margin-top:2px;
+  }
+  .result-line.s1{font-size:72px;letter-spacing:-3px;}
+  .result-line.s2{font-size:56px;letter-spacing:-2px;}
+  .result-line.s3{font-size:42px;letter-spacing:-1px;}
+  /* secondary (when expression visible) */
+  .result-line.sec{font-size:38px;font-weight:300;color:#888;letter-spacing:-1px;}
+  .result-line.sec.s1{font-size:32px;}
+  .result-line.sec.s2{font-size:26px;}
+
+  /* ── BUTTONS GRID ── */
+  .buttons{
+    width:100%;
+    padding:8px 14px 14px;
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    /* 6 rows */
+    grid-template-rows:repeat(6,1fr);
+    gap:10px;
+    /* fixed height: 6 rows of buttons */
+    height:calc(min(100vw, 430px) * 6/4 + 5*10px + 22px);
+    max-height:560px;
+    flex-shrink:0;
+  }
+
+  .btn{
+    border-radius:50%;border:none;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    font-family:inherit;outline:none;
+    transition:opacity .07s,transform .07s;
+    -webkit-touch-callout:none;
+    width:100%;height:100%;
+  }
+  .btn:active{opacity:.5;transform:scale(.94);}
+
+  /* colours */
+  .c-func{background:#636366;color:#fff;}        /* dark gray */
+  .c-op  {background:#ff9f0a;color:#fff;}        /* orange */
+  .c-op.lit{background:#fff;color:#ff9f0a;}
+  .c-num {background:#1c1c1e;color:#fff;}        /* near-black */
+
+  /* font sizes */
+  .btn{font-size:clamp(22px,6vw,34px);font-weight:400;}
+  .btn.big-sym{font-size:clamp(18px,5vw,28px);}  /* backspace svg etc */
+  .btn.op-sym {font-size:clamp(26px,7vw,38px);font-weight:300;}
+
+  /* backspace SVG icon */
+  .ic-back{width:30px;height:22px;fill:#fff;flex-shrink:0;}
+
+  /* ── ADMIN OVERLAY ── */
+  .admin-overlay{
+    display:none;position:absolute;inset:0;background:#000;
+    z-index:200;flex-direction:column;overflow-y:auto;
+    padding:50px 20px 40px;
+  }
+  .admin-overlay.open{display:flex;}
+  .a-title{font-size:28px;font-weight:700;color:#fff;margin-bottom:4px;}
+  .a-sub  {font-size:13px;color:#636366;margin-bottom:28px;}
+  .a-lbl  {font-size:11px;color:#636366;text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:8px;margin-left:4px;}
+  .a-card {background:#1c1c1e;border-radius:13px;margin-bottom:12px;overflow:hidden;}
+  .a-tbox {padding:20px 16px 16px;text-align:center;border-bottom:1px solid #2c2c2e;}
+  .a-tnum {font-size:42px;font-weight:200;color:#ff9f0a;letter-spacing:-2px;line-height:1;}
+  .a-tlbl {font-size:12px;color:#636366;margin-top:6px;}
+  .a-row  {display:flex;align-items:center;justify-content:space-between;padding:14px 16px;}
+  .a-row+.a-row{border-top:1px solid #2c2c2e;}
+  .a-rl   {font-size:16px;color:#fff;}
+  .a-rs   {font-size:13px;color:#636366;margin-top:2px;}
+  .ios-toggle{position:relative;width:51px;height:31px;flex-shrink:0;}
+  .ios-toggle input{opacity:0;width:0;height:0;}
+  .ios-slider{position:absolute;inset:0;background:#3a3a3c;border-radius:34px;transition:background .2s;cursor:pointer;}
+  .ios-slider:before{content:'';position:absolute;width:27px;height:27px;left:2px;bottom:2px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 2px 6px rgba(0,0,0,.4);}
+  .ios-toggle input:checked+.ios-slider{background:#30d158;}
+  .ios-toggle input:checked+.ios-slider:before{transform:translateX(20px);}
+  .a-cust{padding:12px 16px;border-top:1px solid #2c2c2e;display:none;}
+  .a-cust.show{display:flex;gap:10px;align-items:center;}
+  .a-input{flex:1;background:#2c2c2e;border:none;border-radius:10px;color:#fff;font-size:24px;font-weight:300;padding:10px 14px;font-family:inherit;text-align:right;letter-spacing:-1px;}
+  .a-input:focus{outline:2px solid #ff9f0a;}
+  .a-sbtn{background:#ff9f0a;color:#000;border:none;border-radius:10px;padding:12px 18px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .a-sbtn:active{opacity:.75;}
+  .a-slw{padding:14px 16px;border-top:1px solid #2c2c2e;}
+  .a-slt{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .a-slv{font-size:16px;color:#ff9f0a;font-weight:600;min-width:40px;text-align:right;}
+  input[type=range]{width:100%;-webkit-appearance:none;height:4px;background:#3a3a3c;border-radius:2px;outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.4);cursor:pointer;}
+  .a-info{background:#1c1c1e;border-radius:13px;padding:14px 16px;margin-bottom:12px;font-size:14px;color:#ebebf0;line-height:1.65;}
+  .a-info b{color:#ff9f0a;}
+  .a-close{background:#1c1c1e;color:#fff;border:none;border-radius:13px;padding:16px;font-size:17px;font-weight:600;cursor:pointer;font-family:inherit;width:100%;margin-top:4px;}
+  .a-close:active{background:#2c2c2e;}
+</style>
+</head>
+<body>
+<div class="calc">
+
+  <!-- DISPLAY -->
+  <div class="display" id="displayArea">
+    <div class="expr-line"   id="exprLine"></div>
+    <div class="result-line" id="resultLine">0</div>
+  </div>
+
+  <!-- BUTTONS — 6 rows × 4 cols matching screenshot -->
+  <div class="buttons">
+
+    <!-- Row 1: ⌫  AC  %  ÷ -->
+    <button class="btn c-func big-sym" onclick="pressBack()">
+      <svg class="ic-back" viewBox="0 0 34 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12.5 2L2 12l10.5 10H32V2H12.5zm0 2H30v16H12.5L4.4 12l8.1-8z"/>
+        <path d="M18 8l-1.4 1.4L20.2 13l-3.6 3.6L18 18l3.6-3.6 3.6 3.6 1.4-1.4L23 13l3.6-3.6L25.2 8 21.6 11.6 18 8z"/>
+      </svg>
+    </button>
+    <button class="btn c-func"   id="btnAC"  onclick="pressAC()">AC</button>
+    <button class="btn c-func"              onclick="pressPercent()">%</button>
+    <button class="btn c-op op-sym" id="opDiv" onclick="pressOp('÷')">÷</button>
+
+    <!-- Row 2: 7 8 9 × -->
+    <button class="btn c-num" onclick="pressNum('7')">7</button>
+    <button class="btn c-num" onclick="pressNum('8')">8</button>
+    <button class="btn c-num" onclick="pressNum('9')">9</button>
+    <button class="btn c-op op-sym" id="opMul" onclick="pressOp('×')">×</button>
+
+    <!-- Row 3: 4 5 6 − -->
+    <button class="btn c-num" onclick="pressNum('4')">4</button>
+    <button class="btn c-num" onclick="pressNum('5')">5</button>
+    <button class="btn c-num" onclick="pressNum('6')">6</button>
+    <button class="btn c-op op-sym" id="opSub" onclick="pressOp('−')">−</button>
+
+    <!-- Row 4: 1 2 3 + -->
+    <button class="btn c-num" onclick="pressNum('1')">1</button>
+    <button class="btn c-num" onclick="pressNum('2')">2</button>
+    <button class="btn c-num" onclick="pressNum('3')">3</button>
+    <button class="btn c-op op-sym" id="opAdd" onclick="pressOp('+')">+</button>
+
+    <!-- Row 5: +/−  0  ,  = -->
+    <button class="btn c-func" onclick="pressSign()">+/−</button>
+    <button class="btn c-num"  onclick="pressNum('0')">0</button>
+    <button class="btn c-num"  onclick="pressDecimal()">,</button>
+    <button class="btn c-op op-sym" onclick="pressEqual()">=</button>
+
+  </div>
+
+  <!-- ADMIN PANEL -->
+  <div class="admin-overlay" id="adminPanel">
+    <div class="a-title">✦ Pannello Magia</div>
+    <div class="a-sub">Visibile solo al mago</div>
+    <div class="a-lbl">Numero Obiettivo</div>
+    <div class="a-card">
+      <div class="a-tbox">
+        <div class="a-tnum" id="aNum">—</div>
+        <div class="a-tlbl" id="aLbl"></div>
+      </div>
+      <div class="a-row">
+        <div>
+          <div class="a-rl">Usa data e ora corrente</div>
+          <div class="a-rs">GG MM AAAA HH MM</div>
+        </div>
+        <label class="ios-toggle">
+          <input type="checkbox" id="togDate" checked onchange="onToggleDate()">
+          <span class="ios-slider"></span>
+        </label>
+      </div>
+      <div class="a-cust" id="customRow">
+        <input class="a-input" type="number" id="customIn" placeholder="Es. 42">
+        <button class="a-sbtn" onclick="applyCustom()">Imposta</button>
+      </div>
+      <div class="a-slw" id="bufferRow">
+        <div class="a-slt">
+          <div class="a-rl">Buffer secondi</div>
+          <div class="a-slv" id="bufVal">20s</div>
+        </div>
+        <input type="range" id="bufSlider" min="5" max="59" value="20" oninput="onBufChange()">
+        <div class="a-rs" style="margin-top:8px">
+          Se mancano meno di <b id="bufValInline" style="color:#ff9f0a">20</b>s al minuto, usa il minuto successivo
+        </div>
+      </div>
+    </div>
+    <div class="a-lbl" style="margin-top:4px">Come funziona</div>
+    <div class="a-info">
+      <b>Somme 1, 2, 3:</b> inserisci i numeri normalmente con + dopo ognuno.<br><br>
+      <b>4ª somma (magica):</b> ogni tasto numerico inserisce la cifra giusta automaticamente. Premi = per il gran finale.
+    </div>
+    <button class="a-close" onclick="closeAdmin()">Chiudi</button>
+  </div>
+
+</div>
+<script>
+// ── STATE ──
+let current='', runTotal=0, hasTotal=false, addsDone=0;
+let lastOp=null, exprParts=[], justEvaled=false;
+let magicActive=false, magicDigits=[], magicPos=0;
+let useDate=true, customTarget=null, bufferSecs=20;
+let aTaps=0, aTimer=null;
+
+// ── TARGET ──
+function getTarget(){
+  if(!useDate) return customTarget??0;
+  const n=new Date(),s=n.getSeconds();
+  const eff=s>=(60-bufferSecs)?new Date(n.getTime()+(60-s)*1000+1000):n;
+  const dd=String(eff.getDate()).padStart(2,'0');
+  const mm=String(eff.getMonth()+1).padStart(2,'0');
+  const yy=eff.getFullYear();
+  const hh=String(eff.getHours()).padStart(2,'0');
+  const mi=String(eff.getMinutes()).padStart(2,'0');
+  return parseInt(dd+mm+yy+hh+mi,10);
+}
+
+// ── FORMAT ──
+function fmt(n){return isNaN(n)?'Errore':Math.round(n).toLocaleString('it-IT');}
+function fmtCur(){
+  if(current===''||current==='-') return current||'0';
+  // handle decimal input
+  if(current.includes('.')){
+    const [i,d]=current.split('.');
+    return parseInt(i||'0',10).toLocaleString('it-IT')+','+(d??'');
+  }
+  return parseInt(current,10).toLocaleString('it-IT');
+}
+
+function szClass(txt,sec){
+  const l=txt.replace(/[.,\s\-]/g,'').length;
+  if(sec) return l>8?' s2':l>5?' s1':'';
+  return l>11?' s3':l>8?' s2':l>6?' s1':'';
+}
+
+// ── RENDER ──
+function upd(){
+  const eEl=document.getElementById('exprLine');
+  const rEl=document.getElementById('resultLine');
+  const hasExpr=exprParts.length>0;
+  const mainVal=current!==''?fmtCur():(hasTotal?fmt(runTotal):'0');
+
+  if(hasExpr){
+    const live=current!==''?fmtCur():'';
+    eEl.textContent=exprParts.join(' ')+(live?' '+live:'');
+    eEl.classList.add('show');
+    rEl.textContent=mainVal;
+    rEl.className='result-line sec'+szClass(mainVal,true);
+  } else {
+    eEl.textContent='';
+    eEl.classList.remove('show');
+    rEl.textContent=mainVal;
+    rEl.className='result-line'+szClass(mainVal,false);
+  }
+  document.getElementById('btnAC').textContent=(current||hasTotal)?'C':'AC';
+}
+
+function clearLit(){['opAdd','opSub','opMul','opDiv'].forEach(id=>document.getElementById(id).classList.remove('lit'));}
+
+// ── BACKSPACE ──
+function pressBack(){
+  if(magicActive||justEvaled) return;
+  if(current.length>0){
+    current=current.slice(0,-1);
+    upd();
+  }
+}
+
+// ── NUMBERS ──
+function pressNum(d){
+  clearLit();
+  if(magicActive){
+    if(magicPos<magicDigits.length){current+=magicDigits[magicPos++];upd();}
+    return;
+  }
+  if(justEvaled){current='';runTotal=0;hasTotal=false;exprParts=[];lastOp=null;justEvaled=false;}
+  if(current.length>=12) return;
+  current+=d; upd();
+}
+
+function pressDecimal(){
+  if(magicActive) return;
+  if(justEvaled){current='0';justEvaled=false;}
+  if(!current.includes('.')){current+=current?'.':'0.'; upd();}
+}
+
+// ── OPERATORS ──
+function pressOp(op){
+  clearLit(); justEvaled=false;
+  if(op==='+'){
+    if(magicActive) return;
+    const val=current!==''?parseInt(current,10):(hasTotal?runTotal:0);
+    const vs=val.toLocaleString('it-IT');
+    if(!hasTotal){runTotal=val;hasTotal=true;exprParts=[vs,'+'];}
+    else{if(current!=='')runTotal+=val;exprParts.push(vs,'+');}
+    current='';lastOp='+';addsDone++;
+    document.getElementById('opAdd').classList.add('lit');
+    upd();
+    if(addsDone===3) prepMagic();
+    return;
+  }
+  const val=current!==''?parseFloat(current):(hasTotal?runTotal:0);
+  const vs=val.toLocaleString('it-IT');
+  if(!hasTotal){runTotal=val;hasTotal=true;exprParts=[vs,op];}
+  else{
+    if(current!==''){
+      if(lastOp==='−') runTotal-=val;
+      else if(lastOp==='×') runTotal*=val;
+      else if(lastOp==='÷'&&val!==0) runTotal/=val;
+    }
+    exprParts.push(vs,op);
+  }
+  current='';lastOp=op;
+  const im={'−':'opSub','×':'opMul','÷':'opDiv'};
+  document.getElementById(im[op])?.classList.add('lit');
+  upd();
+}
+
+// ── EQUAL ──
+function pressEqual(){
+  clearLit();
+  const eEl=document.getElementById('exprLine');
+  const rEl=document.getElementById('resultLine');
+
+  if(magicActive){
+    while(magicPos<magicDigits.length) current+=magicDigits[magicPos++];
+    const val=parseInt(current||'0',10);
+    exprParts.push(val.toLocaleString('it-IT'),'=');
+    runTotal+=val;
+    current='';magicActive=false;magicDigits=[];magicPos=0;
+    eEl.textContent=exprParts.join(' ');
+    eEl.classList.add('show');
+    rEl.textContent=fmt(runTotal);
+    rEl.className='result-line'+szClass(fmt(runTotal),false);
+    justEvaled=true;exprParts=[];
+    return;
+  }
+  if(current!==''&&hasTotal&&lastOp){
+    const val=parseInt(current,10);
+    exprParts.push(val.toLocaleString('it-IT'),'=');
+    if(lastOp==='+') runTotal+=val;
+    else if(lastOp==='−') runTotal-=val;
+    else if(lastOp==='×') runTotal*=val;
+    else if(lastOp==='÷'&&val!==0) runTotal/=val;
+    current='';lastOp=null;justEvaled=true;
+    eEl.textContent=exprParts.join(' ');
+    eEl.classList.add('show');
+    rEl.textContent=fmt(runTotal);
+    rEl.className='result-line'+szClass(fmt(runTotal),false);
+    exprParts=[];
+    return;
+  }
+  if(hasTotal){
+    eEl.textContent='';eEl.classList.remove('show');
+    rEl.textContent=fmt(runTotal);
+    rEl.className='result-line'+szClass(fmt(runTotal),false);
+    justEvaled=true;exprParts=[];
+  }
+}
+
+// ── AC / C ──
+function pressAC(){
+  current='';runTotal=0;hasTotal=false;addsDone=0;
+  lastOp=null;exprParts=[];justEvaled=false;
+  magicActive=false;magicDigits=[];magicPos=0;
+  clearLit();
+  const eEl=document.getElementById('exprLine');
+  const rEl=document.getElementById('resultLine');
+  eEl.textContent='';eEl.classList.remove('show');
+  rEl.textContent='0';rEl.className='result-line';
+  document.getElementById('btnAC').textContent='AC';
+}
+
+function pressSign(){
+  if(magicActive) return;
+  if(current){current=String(-parseInt(current,10));upd();}
+  else if(hasTotal){runTotal=-runTotal;upd();}
+}
+
+function pressPercent(){
+  if(magicActive) return;
+  if(current){current=String(parseInt(current,10)/100);upd();}
+  else if(hasTotal){runTotal/=100;upd();}
+}
+
+// ── MAGIC ──
+function prepMagic(){
+  const needed=getTarget()-runTotal;
+  magicDigits=String(Math.max(0,Math.round(needed))).split('');
+  magicPos=0;current='';magicActive=true;upd();
+}
+
+// ── ADMIN (5 tap top-right) ──
+document.getElementById('displayArea').addEventListener('click',function(e){
+  const r=this.getBoundingClientRect();
+  if((e.clientX-r.left)>r.width*0.5&&(e.clientY-r.top)<r.height*0.45){
+    aTaps++;clearTimeout(aTimer);
+    aTimer=setTimeout(()=>aTaps=0,1500);
+    if(aTaps>=5){aTaps=0;openAdmin();}
+  }
+});
+
+function buildTI(){
+  if(!useDate) return{num:customTarget??0,lbl:'Numero personalizzato'};
+  const n=new Date(),s=n.getSeconds(),w=s>=(60-bufferSecs);
+  const eff=w?new Date(n.getTime()+(60-s)*1000+1000):n;
+  const dd=String(eff.getDate()).padStart(2,'0');
+  const mm=String(eff.getMonth()+1).padStart(2,'0');
+  const yy=eff.getFullYear();
+  const hh=String(eff.getHours()).padStart(2,'0');
+  const mi=String(eff.getMinutes()).padStart(2,'0');
+  return{num:parseInt(dd+mm+yy+hh+mi,10),lbl:`${dd}/${mm}/${yy}  ${hh}:${mi}`+(w?'  ⚡️ +1 min':'')};
+}
+function openAdmin(){
+  const{num,lbl}=buildTI();
+  document.getElementById('aNum').textContent=fmt(num);
+  document.getElementById('aLbl').textContent=lbl;
+  document.getElementById('bufSlider').value=bufferSecs;
+  document.getElementById('bufVal').textContent=bufferSecs+'s';
+  document.getElementById('bufValInline').textContent=bufferSecs;
+  document.getElementById('adminPanel').classList.add('open');
+}
+function closeAdmin(){document.getElementById('adminPanel').classList.remove('open');}
+function onToggleDate(){
+  useDate=document.getElementById('togDate').checked;
+  document.getElementById('customRow').className='a-cust'+(useDate?'':' show');
+  document.getElementById('bufferRow').style.display=useDate?'':'none';
+  const{num,lbl}=buildTI();
+  document.getElementById('aNum').textContent=fmt(num);
+  document.getElementById('aLbl').textContent=lbl;
+}
+function applyCustom(){
+  const v=document.getElementById('customIn').value;
+  customTarget=v?parseInt(v,10):null;
+  const{num,lbl}=buildTI();
+  document.getElementById('aNum').textContent=fmt(num);
+  document.getElementById('aLbl').textContent=lbl;
+}
+function onBufChange(){
+  bufferSecs=parseInt(document.getElementById('bufSlider').value,10);
+  document.getElementById('bufVal').textContent=bufferSecs+'s';
+  document.getElementById('bufValInline').textContent=bufferSecs;
+  const{num,lbl}=buildTI();
+  document.getElementById('aNum').textContent=fmt(num);
+  document.getElementById('aLbl').textContent=lbl;
+}
+</script>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});}
+</script>
+</body>
+</html>
